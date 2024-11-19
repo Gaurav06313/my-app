@@ -11,7 +11,7 @@ function AppRoutes() {
 
             {/* Main routes */}
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/:id" element={<Profile />} />
 
             {/* 404 Route - Place it at the bottom */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
