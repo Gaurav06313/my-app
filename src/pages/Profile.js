@@ -1,10 +1,11 @@
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { Container, Card } from 'react-bootstrap';
+import { Container, Card, Button } from 'react-bootstrap';
 
 function Profile() {
   const { id } = useParams(); 
   const [profileData, setProfileData] = useState(null);
+  const navigate = useNavigate();
   
   useEffect(() => {
     const fetchProfileData = () => {
@@ -27,6 +28,10 @@ function Profile() {
 
     fetchProfileData();
   }, [id]);
+
+  const handleGoToDashboard = () => {
+    navigate('/dashboard');  // This will navigate to the root path
+  };
 
   if (!profileData) {
     return (
@@ -56,6 +61,14 @@ function Profile() {
               <p><strong>PIN Code:</strong> {profileData.address.pinCode}</p>
             </div>
           )}
+          <div className="d-flex justify-content-between align-items-center mt-4">
+            <Button 
+              variant="secondary" 
+              onClick={handleGoToDashboard}
+            >
+              Go to Dashboard
+            </Button>
+          </div>
         </Card.Body>
       </Card>
     </Container>

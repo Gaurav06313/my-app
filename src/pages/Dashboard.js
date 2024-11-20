@@ -34,7 +34,15 @@ function Dashboard() {
     email: ''
   });
   const [targetTable, setTargetTable] = useState('primary');
-  const [showTableView, setShowTableView] = useState(false);
+  const [showTableView, setShowTableView] = useState(() => {
+    const savedData = localStorage.getItem('table-Data');
+    const data = savedData ? JSON.parse(savedData) : {
+      primary: [],
+      success: [],
+      info: []
+    };
+    return Object.values(data).some(rows => rows.length > 0);
+  });
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [tempData, setTempData] = useState(null);
   const [showAddressForm, setShowAddressForm] = useState(false);
@@ -47,6 +55,8 @@ function Dashboard() {
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const navigate = useNavigate();
+  const [showAddressEdit, setShowAddressEdit] = useState(false);
+  const [editingAddress, setEditingAddress] = useState(null);
 
   const handleEdit = (tableKey, rowId) => {
     setEditingRows(prev => ({
@@ -113,7 +123,23 @@ function Dashboard() {
 
   const handleConfirmSave = () => {
     setShowConfirmation(false);
-    setShowAddressForm(true);
+    
+    // Save the basic profile without address
+    setTableData(prev => {
+      const newData = {
+        ...prev,
+        [tempData.targetTable]: [...prev[tempData.targetTable], {
+          ...tempData,
+          address: null
+        }]
+      };
+      localStorage.setItem('table-Data', JSON.stringify(newData));
+      return newData;
+    });
+
+    // Reset forms
+    setNewEntry({ firstName: '', lastName: '', email: '' });
+    setTempData(null);
   };
 
   const handleSaveProfile = () => {
@@ -157,9 +183,31 @@ function Dashboard() {
     navigate(`/profile/${profile.id}`);
   };
 
-  const renderTable = (tableKey, rows) => {
-    if (rows.length === 0) return null;
+  const handleEditAddress = (tableKey, rowId) => {
+    const profile = tableData[tableKey].find(row => row.id === rowId);
+    setEditingAddress({ tableKey, rowId });
+    setAddress(profile.address || { street: '', city: '', pinCode: '' });
+    setShowAddressEdit(true);
+  };
 
+  const handleSaveAddress = () => {
+    setTableData(prev => {
+      const newData = {
+        ...prev,
+        [editingAddress.tableKey]: prev[editingAddress.tableKey].map(row =>
+          row.id === editingAddress.rowId ? { ...row, address } : row
+        )
+      };
+      localStorage.setItem('table-Data', JSON.stringify(newData));
+      return newData;
+    });
+
+    setShowAddressEdit(false);
+    setEditingAddress(null);
+    setAddress({ street: '', city: '', pinCode: '' });
+  };
+
+  const renderTable = (tableKey, rows) => {
     return (
       <div>
         <h3 className="mt-4 mb-3">{tableKey.charAt(0).toUpperCase() + tableKey.slice(1)} Table</h3>
@@ -170,85 +218,113 @@ function Dashboard() {
               <th>First Name</th>
               <th>Last Name</th>
               <th>Email</th>
+              <th>Address</th>
               <th>Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {rows.map(row => {
-              const isEditing = editingRows[`${tableKey}-${row.id}`];
-              return (
-                <tr key={row.id}>
-                  <td>{row.id}</td>
-                  <td>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={row.firstName}
-                        onChange={(e) => handleChange(tableKey, row.id, 'firstName', e.target.value)}
-                        className="form-control"
-                      />
-                    ) : row.firstName}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={row.lastName}
-                        onChange={(e) => handleChange(tableKey, row.id, 'lastName', e.target.value)}
-                        className="form-control"
-                      />
-                    ) : row.lastName}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <input
-                        type="email"
-                        value={row.email}
-                        onChange={(e) => handleChange(tableKey, row.id, 'email', e.target.value)}
-                        className="form-control"
-                      />
-                    ) : row.email}
-                  </td>
-                  <td>
-                    <div className="d-flex gap-2">
+          {rows.length > 0 && (
+            <tbody>
+              {rows.map((row, index) => {
+                const isEditing = editingRows[`${tableKey}-${row.id}`];
+                return (
+                  <tr key={row.id}>
+                    <td>{index + 1}</td>
+                    <td>
                       {isEditing ? (
-                        <Button
-                          variant="success"
-                          size="sm"
-                          onClick={() => handleSaveRow(tableKey, row.id)}
-                        >
-                          Save
-                        </Button>
+                        <input
+                          type="text"
+                          value={row.firstName}
+                          onChange={(e) => handleChange(tableKey, row.id, 'firstName', e.target.value)}
+                          className="form-control"
+                        />
+                      ) : row.firstName}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={row.lastName}
+                          onChange={(e) => handleChange(tableKey, row.id, 'lastName', e.target.value)}
+                          className="form-control"
+                        />
+                      ) : row.lastName}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <input
+                          type="email"
+                          value={row.email}
+                          onChange={(e) => handleChange(tableKey, row.id, 'email', e.target.value)}
+                          className="form-control"
+                        />
+                      ) : row.email}
+                    </td>
+                    <td>
+                      {row.address ? (
+                        <>
+                          {row.address.street}<br/>
+                          {row.address.city}<br/>
+                          {row.address.pinCode}
+                        </>
                       ) : (
-                        <Button
-                          variant="warning"
-                          size="sm"
-                          onClick={() => handleEdit(tableKey, row.id)}
-                        >
-                          Edit
-                        </Button>
+                        <span className="text-muted">No address</span>
                       )}
-                      <Button
-                        variant="info"
-                        size="sm"
-                        onClick={() => handleShowProfile(tableKey, row.id)}
-                      >
-                        Profile
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleDelete(tableKey, row.id)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+                    </td>
+                    <td>
+                      <div className="d-flex gap-2">
+                        {isEditing ? (
+                          <Button
+                            variant="success"
+                            size="sm"
+                            onClick={() => handleSaveRow(tableKey, row.id)}
+                          >
+                            Save
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              variant="warning"
+                              size="sm"
+                              onClick={() => handleEdit(tableKey, row.id)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => handleEditAddress(tableKey, row.id)}
+                            >
+                              {row.address ? 'Edit Address' : 'Add Address'}
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          variant="info"
+                          size="sm"
+                          onClick={() => handleShowProfile(tableKey, row.id)}
+                        >
+                          Profile
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          onClick={() => handleDelete(tableKey, row.id)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          )}
         </table>
+        {rows.length === 0 && (
+          <div className="text-center p-3">
+            <p>No data available in this table</p>
+          </div>
+        )}
       </div>
     );
   };
@@ -279,7 +355,57 @@ function Dashboard() {
   return (
     <Container>
       <div className="my-4">
-        {!showTableView && !showAddressForm ? (
+        {showAddressEdit ? (
+          // Address Edit Form
+          <>
+            <h2 className="mb-4">Edit Address Details</h2>
+            <Form className="mb-4 p-3 border rounded">
+              <div className="mb-3">
+                <Form.Group className="mb-3">
+                  <Form.Label>Street Address</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="street"
+                    value={address.street}
+                    onChange={handleAddressChange}
+                    required
+                  />
+                </Form.Group>
+                <Form.Group className="mb-3">
+                  <Form.Label>City</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="city"
+                    value={address.city}
+                    onChange={handleAddressChange}
+                    required
+                  />
+                </Form.Group>
+                <Form.Group className="mb-3">
+                  <Form.Label>PIN Code</Form.Label>
+                  <Form.Control
+                    type="text"
+                    name="pinCode"
+                    value={address.pinCode}
+                    onChange={handleAddressChange}
+                    required
+                  />
+                </Form.Group>
+              </div>
+              <div className="d-flex gap-2">
+                <Button variant="secondary" onClick={() => {
+                  setShowAddressEdit(false);
+                  setEditingAddress(null);
+                }}>
+                  Cancel
+                </Button>
+                <Button variant="success" onClick={handleSaveAddress}>
+                  Save Address
+                </Button>
+              </div>
+            </Form>
+          </>
+        ) : !showTableView && !showAddressForm ? (
           // Initial Form View
           <>
             <div className="d-flex justify-content-between align-items-center mb-4">
@@ -368,8 +494,14 @@ function Dashboard() {
                       <Button variant="secondary" onClick={handleCancel}>
                         Cancel
                       </Button>
-                      <Button variant="primary" onClick={handleConfirmSave}>
-                        Create
+                      <Button variant="success" onClick={handleConfirmSave}>
+                        Skip Address
+                      </Button>
+                      <Button variant="primary" onClick={() => {
+                        setShowConfirmation(false);
+                        setShowAddressForm(true);
+                      }}>
+                        Add Address
                       </Button>
                     </div>
                   </div>
@@ -437,17 +569,9 @@ function Dashboard() {
               </Button>
             </div>
 
-            {/* Render tables */}
+            {/* Render all tables regardless of data */}
             {Object.entries(tableData).map(([tableKey, rows]) => 
-              rows.length > 0 && renderTable(tableKey, rows)
-            )}
-
-            {/* Show a message if no data exists */}
-            {Object.values(tableData).every(rows => rows.length === 0) && (
-              <div className="text-center p-4">
-                <h4>No data available</h4>
-                <p>Add some entries to see them here.</p>
-              </div>
+              renderTable(tableKey, rows)
             )}
           </>
         )}
