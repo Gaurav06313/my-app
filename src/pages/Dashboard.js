@@ -17,15 +17,11 @@ function SelectBasicExample() {
 function Dashboard() {
   const [editingRows, setEditingRows] = useState({});
   const [tableData, setTableData] = useState(() => {
-    // Try to get data from localStorage, if not found use default data
     const savedData = localStorage.getItem('table-Data');
     return savedData ? JSON.parse(savedData) : {
-      primary: [
-      ],
-      success: [
-      ],
-      info: [
-      ]
+      primary: [],
+      success: [],
+      info: []
     };
   });
   const [newEntry, setNewEntry] = useState({
@@ -36,12 +32,11 @@ function Dashboard() {
   const [targetTable, setTargetTable] = useState('primary');
   const [showTableView, setShowTableView] = useState(() => {
     const savedData = localStorage.getItem('table-Data');
-    const data = savedData ? JSON.parse(savedData) : {
-      primary: [],
-      success: [],
-      info: []
-    };
-    return Object.values(data).some(rows => rows.length > 0);
+    if (!savedData) return false;
+    
+    const data = JSON.parse(savedData);
+    // Check if any table has data
+    return Object.values(data).some(table => table.length > 0);
   });
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [tempData, setTempData] = useState(null);
@@ -57,6 +52,19 @@ function Dashboard() {
   const navigate = useNavigate();
   const [showAddressEdit, setShowAddressEdit] = useState(false);
   const [editingAddress, setEditingAddress] = useState(null);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [expenseData, setExpenseData] = useState({
+    amount: '',
+    description: '',
+    date: '',
+    type: ''
+  });
+  const [selectedUserTables, setSelectedUserTables] = useState([]);
+  const [expenses, setExpenses] = useState(() => {
+    const savedExpenses = localStorage.getItem('expenses-data');
+    return savedExpenses ? JSON.parse(savedExpenses) : [];
+  });
 
   const handleEdit = (tableKey, rowId) => {
     setEditingRows(prev => ({
@@ -207,9 +215,125 @@ function Dashboard() {
     setAddress({ street: '', city: '', pinCode: '' });
   };
 
+  const handleExpenseClick = () => {
+    setShowExpenseModal(true);
+    setSelectedUserIds([]);
+    setSelectedUserTables([]);
+  };
+
+  const handleUserCheckboxChange = (tableKey, userId) => {
+    const userIdentifier = `${tableKey}|${userId}`;
+    setSelectedUserIds(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
+    });
+    setSelectedUserTables(prev => {
+      if (prev.includes(tableKey)) {
+        return prev.filter(table => table !== tableKey);
+      } else {
+        return [...prev, tableKey];
+      }
+    });
+  };
+
+  const handleExpenseSave = () => {
+    const expenseId = Date.now() + Math.floor(Math.random() * 1000);
+    
+    // Create new expense object
+    const newExpense = {
+      id: expenseId,
+      amount: expenseData.amount,
+      description: expenseData.description,
+      date: expenseData.date,
+      type: expenseData.type,
+      users: selectedUserIds.map((userId, index) => ({
+        userId,
+        tableKey: selectedUserTables[index],
+        userName: (() => {
+          const user = tableData[selectedUserTables[index]].find(u => u.id === userId);
+          return `${user.firstName} ${user.lastName}`;
+        })()
+      }))
+    };
+
+    // Update expenses state and local storage
+    setExpenses(prevExpenses => {
+      const updatedExpenses = [...prevExpenses, newExpense];
+      localStorage.setItem('expenses-data', JSON.stringify(updatedExpenses));
+      return updatedExpenses;
+    });
+
+    // Update user data in tableData
+    setTableData(prev => {
+      const newData = { ...prev };
+      
+      selectedUserIds.forEach((userId, index) => {
+        const tableKey = selectedUserTables[index];
+        newData[tableKey] = newData[tableKey].map(user => {
+          if (user.id === userId) {
+            return {
+              ...user,
+              expenses: [...(user.expenses || []), {
+                id: expenseId,
+                amount: expenseData.amount,
+                description: expenseData.description,
+                date: expenseData.date,
+                type: expenseData.type
+              }]
+            };
+          }
+          return user;
+        });
+      });
+      
+      localStorage.setItem('table-Data', JSON.stringify(newData));
+      return newData;
+    });
+
+    resetExpenseState();
+  };
+
+  const handleExpenseChange = (e) => {
+    const { name, value } = e.target;
+    setExpenseData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleDeleteExpense = (tableKey, userId, expenseId) => {
+    // Remove from expenses storage
+    setExpenses(prevExpenses => {
+      const updatedExpenses = prevExpenses.filter(exp => exp.id !== expenseId);
+      localStorage.setItem('expenses-data', JSON.stringify(updatedExpenses));
+      return updatedExpenses;
+    });
+
+    // Remove from user data
+    setTableData(prev => {
+      const newData = {
+        ...prev,
+        [tableKey]: prev[tableKey].map(user => {
+          if (user.id === userId) {
+            return {
+              ...user,
+              expenses: (user.expenses || []).filter(exp => exp.id !== expenseId)
+            };
+          }
+          return user;
+        })
+      };
+      localStorage.setItem('table-Data', JSON.stringify(newData));
+      return newData;
+    });
+  };
+
   const renderTable = (tableKey, rows) => {
     return (
-      <div>
+      <div key={tableKey}>
         <h3 className="mt-4 mb-3">{tableKey.charAt(0).toUpperCase() + tableKey.slice(1)} Table</h3>
         <table className="table table-hover table-bordered mb-5">
           <thead className={`table-${tableKey}`}>
@@ -222,109 +346,102 @@ function Dashboard() {
               <th>Actions</th>
             </tr>
           </thead>
-          {rows.length > 0 && (
-            <tbody>
-              {rows.map((row, index) => {
-                const isEditing = editingRows[`${tableKey}-${row.id}`];
-                return (
-                  <tr key={row.id}>
-                    <td>{index + 1}</td>
-                    <td>
+          <tbody>
+            {rows.map((row, index) => {
+              const isEditing = editingRows[`${tableKey}-${row.id}`];
+              return (
+                <tr key={row.id}>
+                  <td>{index + 1}</td>
+                  <td>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={row.firstName}
+                        onChange={(e) => handleChange(tableKey, row.id, 'firstName', e.target.value)}
+                        className="form-control"
+                      />
+                    ) : row.firstName}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        value={row.lastName}
+                        onChange={(e) => handleChange(tableKey, row.id, 'lastName', e.target.value)}
+                        className="form-control"
+                      />
+                    ) : row.lastName}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <input
+                        type="email"
+                        value={row.email}
+                        onChange={(e) => handleChange(tableKey, row.id, 'email', e.target.value)}
+                        className="form-control"
+                      />
+                    ) : row.email}
+                  </td>
+                  <td>
+                    {row.address ? (
+                      <>
+                        {row.address.street}<br/>
+                        {row.address.city}<br/>
+                        {row.address.pinCode}
+                      </>
+                    ) : (
+                      <span className="text-muted">No address</span>
+                    )}
+                  </td>
+                  <td>
+                    <div className="d-flex gap-2">
                       {isEditing ? (
-                        <input
-                          type="text"
-                          value={row.firstName}
-                          onChange={(e) => handleChange(tableKey, row.id, 'firstName', e.target.value)}
-                          className="form-control"
-                        />
-                      ) : row.firstName}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          value={row.lastName}
-                          onChange={(e) => handleChange(tableKey, row.id, 'lastName', e.target.value)}
-                          className="form-control"
-                        />
-                      ) : row.lastName}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <input
-                          type="email"
-                          value={row.email}
-                          onChange={(e) => handleChange(tableKey, row.id, 'email', e.target.value)}
-                          className="form-control"
-                        />
-                      ) : row.email}
-                    </td>
-                    <td>
-                      {row.address ? (
-                        <>
-                          {row.address.street}<br/>
-                          {row.address.city}<br/>
-                          {row.address.pinCode}
-                        </>
+                        <Button
+                          variant="success"
+                          size="sm"
+                          onClick={() => handleSaveRow(tableKey, row.id)}
+                        >
+                          Save
+                        </Button>
                       ) : (
-                        <span className="text-muted">No address</span>
-                      )}
-                    </td>
-                    <td>
-                      <div className="d-flex gap-2">
-                        {isEditing ? (
+                        <>
                           <Button
-                            variant="success"
+                            variant="warning"
                             size="sm"
-                            onClick={() => handleSaveRow(tableKey, row.id)}
+                            onClick={() => handleEdit(tableKey, row.id)}
                           >
-                            Save
+                            Edit
                           </Button>
-                        ) : (
-                          <>
-                            <Button
-                              variant="warning"
-                              size="sm"
-                              onClick={() => handleEdit(tableKey, row.id)}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => handleEditAddress(tableKey, row.id)}
-                            >
-                              {row.address ? 'Edit Address' : 'Add Address'}
-                            </Button>
-                          </>
-                        )}
-                        <Button
-                          variant="info"
-                          size="sm"
-                          onClick={() => handleShowProfile(tableKey, row.id)}
-                        >
-                          Profile
-                        </Button>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => handleDelete(tableKey, row.id)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          )}
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleEditAddress(tableKey, row.id)}
+                          >
+                            {row.address ? 'Edit Address' : 'Add Address'}
+                          </Button>
+                          <Button
+                            variant="info"
+                            size="sm"
+                            onClick={() => handleShowProfile(tableKey, row.id)}
+                          >
+                            Profile
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleDelete(tableKey, row.id)}
+                          >
+                            Delete
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
         </table>
-        {rows.length === 0 && (
-          <div className="text-center p-3">
-            <p>No data available in this table</p>
-          </div>
-        )}
       </div>
     );
   };
@@ -350,6 +467,24 @@ function Dashboard() {
         ))}
       </div>
     );
+  };
+
+  // Add this function to handle the Go to Form button click
+  const handleGoToForm = () => {
+    setShowTableView(false);
+  };
+
+  // Add this function with your other function declarations
+  const resetExpenseState = () => {
+    setShowExpenseModal(false);
+    setSelectedUserIds([]);
+    setSelectedUserTables([]);
+    setExpenseData({
+      amount: '',
+      description: '',
+      date: '',
+      type: ''
+    });
   };
 
   return (
@@ -405,173 +540,145 @@ function Dashboard() {
               </div>
             </Form>
           </>
-        ) : !showTableView && !showAddressForm ? (
-          // Initial Form View
+        ) : (
           <>
-            <div className="d-flex justify-content-between align-items-center mb-4">
-              <h2>Add New Entry</h2>
-              <Button 
-                variant="primary" 
-                onClick={() => setShowTableView(true)}
-              >
-                Show Tables
-              </Button>
-            </div>
-            <Form onSubmit={handleSubmit} className="mb-4 p-3 border rounded">
-              <div className="d-flex gap-3 mb-3">
-                <Form.Group className="flex-grow-1">
-                  <Form.Control
-                    type="text"
-                    name="firstName"
-                    placeholder="First Name"
-                    value={newEntry.firstName}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </Form.Group>
-                <Form.Group className="flex-grow-1">
-                  <Form.Control
-                    type="text"
-                    name="lastName"
-                    placeholder="Last Name"
-                    value={newEntry.lastName}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </Form.Group>
-                <Form.Group className="flex-grow-1">
-                  <Form.Control
-                    type="email"
-                    name="email"
-                    placeholder="Email"
-                    value={newEntry.email}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </Form.Group>
-              </div>
-              <div className="d-flex gap-2">
-                <Form.Select
-                  value={targetTable}
-                  onChange={(e) => setTargetTable(e.target.value)}
-                  style={{ width: '200px' }}
-                >
-                  <option value="primary">Primary Table</option>
-                  <option value="success">Success Table</option>
-                  <option value="info">Info Table</option>
-                </Form.Select>
-                <Button type="submit" variant="success">
-                  Add Entry
-                </Button>
-              </div>
-            </Form>
-
-            {/* Confirmation Modal */}
-            {showConfirmation && (
-              <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
-                <div className="modal-dialog modal-dialog-centered">
-                  <div className="modal-content">
-                    <div className="modal-header">
-                      <h5 className="modal-title">Confirm Entry</h5>
-                      <button type="button" className="btn-close" onClick={handleCancel}></button>
-                    </div>
-                    <div className="modal-body">
-                      <p>Are you sure you want to save the following information?</p>
-                      <div className="mb-2">
-                        <strong>First Name:</strong> {tempData?.firstName}
-                      </div>
-                      <div className="mb-2">
-                        <strong>Last Name:</strong> {tempData?.lastName}
-                      </div>
-                      <div className="mb-2">
-                        <strong>Email:</strong> {tempData?.email}
-                      </div>
-                      <div>
-                        <strong>Table:</strong> {tempData?.targetTable}
-                      </div>
-                    </div>
-                    <div className="modal-footer">
-                      <Button variant="secondary" onClick={handleCancel}>
-                        Cancel
-                      </Button>
-                      <Button variant="success" onClick={handleConfirmSave}>
-                        Skip Address
-                      </Button>
-                      <Button variant="primary" onClick={() => {
-                        setShowConfirmation(false);
-                        setShowAddressForm(true);
-                      }}>
-                        Add Address
-                      </Button>
-                    </div>
+            {showTableView ? (
+              <>
+                <div className="d-flex justify-content-between align-items-center mb-4">
+                  <h2>Table View</h2>
+                  <div className="d-flex gap-2">
+                    <Button 
+                      variant="warning" 
+                      onClick={handleExpenseClick}
+                    >
+                      Add Expense
+                    </Button>
+                    <Button 
+                      variant="primary" 
+                      onClick={handleGoToForm}
+                    >
+                      Go to Form
+                    </Button>
                   </div>
                 </div>
-              </div>
-            )}
-          </>
-        ) : showAddressForm ? (
-          // Address Form
-          <>
-            <h2 className="mb-4">Add Address Details</h2>
-            <Form className="mb-4 p-3 border rounded">
-              <div className="mb-3">
-                <Form.Group className="mb-3">
-                  <Form.Label>Street Address</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="street"
-                    value={address.street}
-                    onChange={handleAddressChange}
-                    required
-                  />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>City</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="city"
-                    value={address.city}
-                    onChange={handleAddressChange}
-                    required
-                  />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>PIN Code</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name="pinCode"
-                    value={address.pinCode}
-                    onChange={handleAddressChange}
-                    required
-                  />
-                </Form.Group>
-              </div>
-              <div className="d-flex gap-2">
-                <Button variant="secondary" onClick={() => setShowAddressForm(false)}>
-                  Back
-                </Button>
-                <Button variant="success" onClick={handleSaveProfile}>
-                  Save Profile
-                </Button>
-              </div>
-            </Form>
-          </>
-        ) : (
-          // Table View
-          <>
-            <div className="d-flex justify-content-between align-items-center mb-4">
-              <h2>Table View</h2>
-              <Button 
-                variant="primary" 
-                onClick={() => setShowTableView(false)}
-              >
-                Back to Form
-              </Button>
-            </div>
 
-            {/* Render all tables regardless of data */}
-            {Object.entries(tableData).map(([tableKey, rows]) => 
-              renderTable(tableKey, rows)
+                {/* Only render tables that have data */}
+                {Object.entries(tableData).map(([tableKey, rows]) => 
+                  rows.length > 0 ? renderTable(tableKey, rows) : null
+                )}
+
+                {/* Show message if no tables have data */}
+                {Object.values(tableData).every(rows => rows.length === 0) && (
+                  <div className="alert alert-info text-center">
+                    <p className="mb-0">No data available in any table. Please add some entries.</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="d-flex justify-content-between align-items-center mb-4">
+                  <h2>Add New Entry</h2>
+                  {Object.values(tableData).some(table => table.length > 0) && (
+                    <Button 
+                      variant="primary" 
+                      onClick={() => setShowTableView(true)}
+                    >
+                      View Tables
+                    </Button>
+                  )}
+                </div>
+                <Form onSubmit={handleSubmit} className="mb-4 p-3 border rounded">
+                  <div className="d-flex gap-3 mb-3">
+                    <Form.Group className="flex-grow-1">
+                      <Form.Control
+                        type="text"
+                        name="firstName"
+                        placeholder="First Name"
+                        value={newEntry.firstName}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </Form.Group>
+                    <Form.Group className="flex-grow-1">
+                      <Form.Control
+                        type="text"
+                        name="lastName"
+                        placeholder="Last Name"
+                        value={newEntry.lastName}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </Form.Group>
+                    <Form.Group className="flex-grow-1">
+                      <Form.Control
+                        type="email"
+                        name="email"
+                        placeholder="Email"
+                        value={newEntry.email}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </Form.Group>
+                  </div>
+                  <div className="d-flex gap-2">
+                    <Form.Select
+                      value={targetTable}
+                      onChange={(e) => setTargetTable(e.target.value)}
+                      style={{ width: '200px' }}
+                    >
+                      <option value="primary">Primary Table</option>
+                      <option value="success">Success Table</option>
+                      <option value="info">Info Table</option>
+                    </Form.Select>
+                    <Button type="submit" variant="success">
+                      Add Entry
+                    </Button>
+                  </div>
+                </Form>
+
+                {/* Confirmation Modal */}
+                {showConfirmation && (
+                  <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+                    <div className="modal-dialog modal-dialog-centered">
+                      <div className="modal-content">
+                        <div className="modal-header">
+                          <h5 className="modal-title">Confirm Entry</h5>
+                          <button type="button" className="btn-close" onClick={handleCancel}></button>
+                        </div>
+                        <div className="modal-body">
+                          <p>Are you sure you want to save the following information?</p>
+                          <div className="mb-2">
+                            <strong>First Name:</strong> {tempData?.firstName}
+                          </div>
+                          <div className="mb-2">
+                            <strong>Last Name:</strong> {tempData?.lastName}
+                          </div>
+                          <div className="mb-2">
+                            <strong>Email:</strong> {tempData?.email}
+                          </div>
+                          <div>
+                            <strong>Table:</strong> {tempData?.targetTable}
+                          </div>
+                        </div>
+                        <div className="modal-footer">
+                          <Button variant="secondary" onClick={handleCancel}>
+                            Cancel
+                          </Button>
+                          <Button variant="success" onClick={handleConfirmSave}>
+                            Skip Address
+                          </Button>
+                          <Button variant="primary" onClick={() => {
+                            setShowConfirmation(false);
+                            setShowAddressForm(true);
+                          }}>
+                            Add Address
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
@@ -621,6 +728,223 @@ function Dashboard() {
                     }}
                   >
                     Close
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Expense Modal */}
+        {showExpenseModal && (
+          <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">Add Expense</h5>
+                  <button 
+                    type="button" 
+                    className="btn-close" 
+                    onClick={() => {
+                      setShowExpenseModal(false);
+                      setSelectedUserIds([]);
+                      setSelectedUserTables([]);
+                      setExpenseData({ amount: '', description: '', date: '', type: '' });
+                    }}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  {!selectedUserIds.length ? (
+                    <Form.Group className="mb-3">
+                      <Form.Label>Select Users</Form.Label>
+                      <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                        {Object.entries(tableData).map(([tableKey, users]) => (
+                          <div key={tableKey}>
+                            <h6 className="mt-2">{tableKey.charAt(0).toUpperCase() + tableKey.slice(1)} Table</h6>
+                            {users.map(user => (
+                              <Form.Check
+                                key={`${tableKey}-${user.id}`}
+                                type="checkbox"
+                                id={`user-${tableKey}-${user.id}`}
+                                label={`${user.firstName} ${user.lastName}`}
+                                onChange={() => handleUserCheckboxChange(tableKey, user.id)}
+                                checked={selectedUserIds.includes(user.id)}
+                              />
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </Form.Group>
+                  ) : !expenseData.type ? (
+                    <Form>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Select Expense Type</Form.Label>
+                        <Form.Select
+                          name="type"
+                          value={expenseData.type}
+                          onChange={handleExpenseChange}
+                          required
+                        >
+                          <option value="">Choose type...</option>
+                          <option value="food">Food</option>
+                          <option value="transport">Transport</option>
+                          <option value="utilities">Utilities</option>
+                          <option value="entertainment">Entertainment</option>
+                          <option value="other">Other</option>
+                        </Form.Select>
+                      </Form.Group>
+                      <div>
+                        <Button 
+                          variant="secondary" 
+                          size="sm"
+                          onClick={() => {
+                            setSelectedUserIds([]);
+                            setSelectedUserTables([]);
+                          }}
+                          className="mb-3"
+                        >
+                          Back to user selection
+                        </Button>
+                      </div>
+                    </Form>
+                  ) : (
+                    <Form>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Amount</Form.Label>
+                        <Form.Control
+                          type="number"
+                          name="amount"
+                          value={expenseData.amount}
+                          onChange={handleExpenseChange}
+                          required
+                        />
+                      </Form.Group>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Description</Form.Label>
+                        <Form.Control
+                          type="text"
+                          name="description"
+                          value={expenseData.description}
+                          onChange={handleExpenseChange}
+                          required
+                        />
+                      </Form.Group>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Date</Form.Label>
+                        <Form.Control
+                          type="date"
+                          name="date"
+                          value={expenseData.date}
+                          onChange={handleExpenseChange}
+                          required
+                        />
+                      </Form.Group>
+                      <div>
+                        <Button 
+                          variant="secondary" 
+                          size="sm"
+                          onClick={() => {
+                            setExpenseData(prev => ({ ...prev, type: '' }));
+                          }}
+                          className="mb-3"
+                        >
+                          Back to expense type
+                        </Button>
+                      </div>
+                    </Form>
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => {
+                      setShowExpenseModal(false);
+                      setSelectedUserIds([]);
+                      setSelectedUserTables([]);
+                      setExpenseData({ amount: '', description: '', date: '', type: '' });
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  {selectedUserIds.length > 0 && (
+                    <Button 
+                      variant="primary"
+                      onClick={handleExpenseSave}
+                    >
+                      Save Expense for {selectedUserIds.length} Users
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Address Form */}
+        {showAddressForm && (
+          <div className="modal show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">Add Address</h5>
+                  <button 
+                    type="button" 
+                    className="btn-close" 
+                    onClick={() => {
+                      setShowAddressForm(false);
+                      setTempData(null);
+                    }}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <Form>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Street Address</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="street"
+                        value={address.street}
+                        onChange={handleAddressChange}
+                        required
+                      />
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                      <Form.Label>City</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="city"
+                        value={address.city}
+                        onChange={handleAddressChange}
+                        required
+                      />
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                      <Form.Label>PIN Code</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="pinCode"
+                        value={address.pinCode}
+                        onChange={handleAddressChange}
+                        required
+                      />
+                    </Form.Group>
+                  </Form>
+                </div>
+                <div className="modal-footer">
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => {
+                      setShowAddressForm(false);
+                      setTempData(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    variant="primary" 
+                    onClick={handleSaveProfile}
+                  >
+                    Save Profile with Address
                   </Button>
                 </div>
               </div>
