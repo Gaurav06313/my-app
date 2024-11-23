@@ -1,28 +1,17 @@
-import { useState } from 'react';
+import { useState, useContext } from 'react';
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { Container, Button, Nav, Navbar, Form } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
+import { AppContext } from '../AppContext';
 
 
-function SelectBasicExample() {
-  return (
-    <Form.Select aria-label="Default select example">
-      <option>Open this select menu</option>
-      <option value="1">primary</option>
-      <option value="2">success</option>
-      <option value="3">info</option>
-    </Form.Select>
-  );
-}
 function Dashboard() {
-  const [editingRows, setEditingRows] = useState({});
-  const [tableData, setTableData] = useState(() => {
-    const savedData = localStorage.getItem('table-Data');
-    return savedData ? JSON.parse(savedData) : {
-      primary: [],
-      success: [],
-      info: []
-    };
+  const { state: { dashboard: { allUsers = {} } = {} } = {}, dispatch } = useContext(AppContext)
+  const [editingRows, setEditingRows] = useState(0);
+  const [tableData, setTableData] = useState({
+    primary: [],
+    success: [],
+    info: []
   });
   const [newEntry, setNewEntry] = useState({
     firstName: '',
@@ -33,13 +22,13 @@ function Dashboard() {
   const [showTableView, setShowTableView] = useState(() => {
     const savedData = localStorage.getItem('table-Data');
     if (!savedData) return false;
-    
+
     const data = JSON.parse(savedData);
     // Check if any table has data
     return Object.values(data).some(table => table.length > 0);
   });
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [tempData, setTempData] = useState(null);
+  const [tempData, setTempData] = useState({});
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [showProfileCards, setShowProfileCards] = useState(false);
   const [address, setAddress] = useState({
@@ -114,7 +103,7 @@ function Dashboard() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    
+
     // Generate unique ID using timestamp and random number
     const uniqueId = Date.now() + Math.floor(Math.random() * 1000);
 
@@ -131,7 +120,7 @@ function Dashboard() {
 
   const handleConfirmSave = () => {
     setShowConfirmation(false);
-    
+
     // Save the basic profile without address
     setTableData(prev => {
       const newData = {
@@ -141,9 +130,20 @@ function Dashboard() {
           address: null
         }]
       };
-      localStorage.setItem('table-Data', JSON.stringify(newData));
+      /*localStorage.setItem('table-Data', JSON.stringify(newData));*/
       return newData;
     });
+    dispatch({
+      type: 'ADD_NEW_USER',
+      payload: {
+        ...tableData,
+        [tempData.targetTable]: [...tableData[tempData.targetTable], {
+          ...tempData,
+          address: null
+        }]
+      }
+    })
+
 
     // Reset forms
     setNewEntry({ firstName: '', lastName: '', email: '' });
@@ -186,13 +186,13 @@ function Dashboard() {
   };
 
   const handleShowProfile = (tableKey, rowId) => {
-    const profile = tableData[tableKey].find(row => row.id === rowId);
+    const profile = allUsers[tableKey].find(row => row.id === rowId);
     setSelectedProfile(profile);
     navigate(`/profile/${profile.id}`);
   };
 
   const handleEditAddress = (tableKey, rowId) => {
-    const profile = tableData[tableKey].find(row => row.id === rowId);
+    const profile = allUsers[tableKey].find(row => row.id === rowId);
     setEditingAddress({ tableKey, rowId });
     setAddress(profile.address || { street: '', city: '', pinCode: '' });
     setShowAddressEdit(true);
@@ -241,7 +241,7 @@ function Dashboard() {
 
   const handleExpenseSave = () => {
     const expenseId = Date.now() + Math.floor(Math.random() * 1000);
-    
+
     // Create new expense object
     const newExpense = {
       id: expenseId,
@@ -253,7 +253,7 @@ function Dashboard() {
         userId,
         tableKey: selectedUserTables[index],
         userName: (() => {
-          const user = tableData[selectedUserTables[index]].find(u => u.id === userId);
+          const user = allUsers[selectedUserTables[index]].find(u => u.id === userId);
           return `${user.firstName} ${user.lastName}`;
         })()
       }))
@@ -269,7 +269,7 @@ function Dashboard() {
     // Update user data in tableData
     setTableData(prev => {
       const newData = { ...prev };
-      
+
       selectedUserIds.forEach((userId, index) => {
         const tableKey = selectedUserTables[index];
         newData[tableKey] = newData[tableKey].map(user => {
@@ -288,7 +288,7 @@ function Dashboard() {
           return user;
         });
       });
-      
+
       localStorage.setItem('table-Data', JSON.stringify(newData));
       return newData;
     });
@@ -385,8 +385,8 @@ function Dashboard() {
                   <td>
                     {row.address ? (
                       <>
-                        {row.address.street}<br/>
-                        {row.address.city}<br/>
+                        {row.address.street}<br />
+                        {row.address.city}<br />
                         {row.address.pinCode}
                       </>
                     ) : (
@@ -442,29 +442,6 @@ function Dashboard() {
             })}
           </tbody>
         </table>
-      </div>
-    );
-  };
-
-  const renderProfileCards = () => {
-    return (
-      <div className="row g-4">
-        {Object.values(tableData).flat().map((profile, index) => (
-          <div key={index} className="col-md-4">
-            <div className="card h-100">
-              <div className="card-body">
-                <h5 className="card-title">{profile.firstName} {profile.lastName}</h5>
-                <p className="card-text">
-                  <strong>Email:</strong> {profile.email}<br />
-                  <strong>Address:</strong><br />
-                  {profile.address?.street}<br />
-                  {profile.address?.city}<br />
-                  {profile.address?.pinCode}
-                </p>
-              </div>
-            </div>
-          </div>
-        ))}
       </div>
     );
   };
@@ -547,14 +524,14 @@ function Dashboard() {
                 <div className="d-flex justify-content-between align-items-center mb-4">
                   <h2>Table View</h2>
                   <div className="d-flex gap-2">
-                    <Button 
-                      variant="warning" 
+                    <Button
+                      variant="warning"
                       onClick={handleExpenseClick}
                     >
                       Add Expense
                     </Button>
-                    <Button 
-                      variant="primary" 
+                    <Button
+                      variant="primary"
                       onClick={handleGoToForm}
                     >
                       Go to Form
@@ -563,12 +540,12 @@ function Dashboard() {
                 </div>
 
                 {/* Only render tables that have data */}
-                {Object.entries(tableData).map(([tableKey, rows]) => 
+                {Object.entries(tableData).map(([tableKey, rows]) =>
                   rows.length > 0 ? renderTable(tableKey, rows) : null
                 )}
 
                 {/* Show message if no tables have data */}
-                {Object.values(tableData).every(rows => rows.length === 0) && (
+                {Object.values(allUsers).every(rows => rows.length === 0) && (
                   <div className="alert alert-info text-center">
                     <p className="mb-0">No data available in any table. Please add some entries.</p>
                   </div>
@@ -578,9 +555,9 @@ function Dashboard() {
               <>
                 <div className="d-flex justify-content-between align-items-center mb-4">
                   <h2>Add New Entry</h2>
-                  {Object.values(tableData).some(table => table.length > 0) && (
-                    <Button 
-                      variant="primary" 
+                  {Object.values(allUsers).some(table => table.length > 0) && (
+                    <Button
+                      variant="primary"
                       onClick={() => setShowTableView(true)}
                     >
                       View Tables
@@ -690,9 +667,9 @@ function Dashboard() {
               <div className="modal-content">
                 <div className="modal-header">
                   <h5 className="modal-title">Profile Details</h5>
-                  <button 
-                    type="button" 
-                    className="btn-close" 
+                  <button
+                    type="button"
+                    className="btn-close"
                     onClick={() => {
                       setShowProfileModal(false);
                       setSelectedProfile(null);
@@ -720,8 +697,8 @@ function Dashboard() {
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     onClick={() => {
                       setShowProfileModal(false);
                       setSelectedProfile(null);
@@ -742,9 +719,9 @@ function Dashboard() {
               <div className="modal-content">
                 <div className="modal-header">
                   <h5 className="modal-title">Add Expense</h5>
-                  <button 
-                    type="button" 
-                    className="btn-close" 
+                  <button
+                    type="button"
+                    className="btn-close"
                     onClick={() => {
                       setShowExpenseModal(false);
                       setSelectedUserIds([]);
@@ -758,7 +735,7 @@ function Dashboard() {
                     <Form.Group className="mb-3">
                       <Form.Label>Select Users</Form.Label>
                       <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                        {Object.entries(tableData).map(([tableKey, users]) => (
+                        {Object.entries(allUsers).map(([tableKey, users]) => (
                           <div key={tableKey}>
                             <h6 className="mt-2">{tableKey.charAt(0).toUpperCase() + tableKey.slice(1)} Table</h6>
                             {users.map(user => (
@@ -794,8 +771,8 @@ function Dashboard() {
                         </Form.Select>
                       </Form.Group>
                       <div>
-                        <Button 
-                          variant="secondary" 
+                        <Button
+                          variant="secondary"
                           size="sm"
                           onClick={() => {
                             setSelectedUserIds([]);
@@ -840,8 +817,8 @@ function Dashboard() {
                         />
                       </Form.Group>
                       <div>
-                        <Button 
-                          variant="secondary" 
+                        <Button
+                          variant="secondary"
                           size="sm"
                           onClick={() => {
                             setExpenseData(prev => ({ ...prev, type: '' }));
@@ -855,8 +832,8 @@ function Dashboard() {
                   )}
                 </div>
                 <div className="modal-footer">
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     onClick={() => {
                       setShowExpenseModal(false);
                       setSelectedUserIds([]);
@@ -867,7 +844,7 @@ function Dashboard() {
                     Cancel
                   </Button>
                   {selectedUserIds.length > 0 && (
-                    <Button 
+                    <Button
                       variant="primary"
                       onClick={handleExpenseSave}
                     >
@@ -887,9 +864,9 @@ function Dashboard() {
               <div className="modal-content">
                 <div className="modal-header">
                   <h5 className="modal-title">Add Address</h5>
-                  <button 
-                    type="button" 
-                    className="btn-close" 
+                  <button
+                    type="button"
+                    className="btn-close"
                     onClick={() => {
                       setShowAddressForm(false);
                       setTempData(null);
@@ -931,8 +908,8 @@ function Dashboard() {
                   </Form>
                 </div>
                 <div className="modal-footer">
-                  <Button 
-                    variant="secondary" 
+                  <Button
+                    variant="secondary"
                     onClick={() => {
                       setShowAddressForm(false);
                       setTempData(null);
@@ -940,8 +917,8 @@ function Dashboard() {
                   >
                     Cancel
                   </Button>
-                  <Button 
-                    variant="primary" 
+                  <Button
+                    variant="primary"
                     onClick={handleSaveProfile}
                   >
                     Save Profile with Address

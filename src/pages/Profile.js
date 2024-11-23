@@ -1,8 +1,11 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { Container, Card, Button } from 'react-bootstrap';
+import { AppContext } from '../AppContext';
+
 
 function Profile() {
+  const { state: { dashboard: { allUsers = {} } = {} } = {}, dispatch } = useContext(AppContext)
   const { id } = useParams(); 
   const [profileData, setProfileData] = useState(null);
   const navigate = useNavigate();
@@ -14,9 +17,9 @@ function Profile() {
       
       // Search through all tables (primary, success, info) to find the profile
       let foundProfile = null;
-      if (tableData) {
+      if (allUsers) {
         for (const tableKey of ['primary', 'success', 'info']) {
-          const profile = tableData[tableKey].find(row => row.id === parseInt(id));
+          const profile = (allUsers[tableKey] || []).find(row => row.id === parseInt(id));
           if (profile) {
             foundProfile = profile;
             break;
