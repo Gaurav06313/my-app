@@ -6,6 +6,11 @@ export default function dashboardReducer (state = {}, action) {
                 ...state,
                 allUsers: action.payload
             }
+        case 'SAVE_EDITED_USER':
+            return {
+                ...state,
+                allUsers: action.payload
+            }
         default:
             return state;
     }
